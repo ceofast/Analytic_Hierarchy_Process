@@ -5,6 +5,9 @@ import numpy as np
 
 class FormApp(tk.Tk):
     def __init__(self):
+        """
+        Initialize the main application window and its components.
+        """
         super().__init__()
         self.title('Analytic Hierarchy Process')
         self.geometry('600x400')
@@ -20,6 +23,10 @@ class FormApp(tk.Tk):
         calculate_btn.grid(row=self.n + 1, column=0, columnspan=self.n)
 
     def calculate(self):
+        """
+        Gather input from the entries, process the AHP calculations, and display the results.
+        Handles errors by showing appropriate messages.
+        """
         try:
             values = [float(entry.get()) for entry in self.entries]
             criteria_matrix = np.array(values).reshape((self.n, self.n))
