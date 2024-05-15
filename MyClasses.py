@@ -1,75 +1,173 @@
 import numpy as np
+import tkinter as tk
+import matplotlib.pyplot as plt
+from MyClasses import Calculation
+from tkinter import messagebox, simpledialog, ttk
 
-class Calculation:
-    @staticmethod
-    def validate_matrix(matrix):
+class FormApp(tk.Tk):
+    def __init__(self):
         """
-        Validate the properties of the matrix to ensure it is suitable for AHP calculations.
-
-        Parameters:
-            matrix (np.ndarray): A square numpy matrix containing the pairwise comparison values.
-
-        Raises:
-            ValueError: If the matrix is not a square matrix, not a numpy array, or contains elements less than or equal to zero.
+        Initialize the main application window and its components.
         """
-        if not isinstance(matrix, np.ndarray):
-            raise ValueError("Matrix must be a numpy array.")
-        if matrix.shape[0] != matrix.shape[1]:
-            raise ValueError("Matrix must be square.")
-        if np.any(matrix <= 0):
-            raise ValueError("Matrix elements must be greater than zero.")
+        super().__init__()
+        self.title('Analytic Hierarchy Process')
+        self.geometry('800x600')
 
-    @staticmethod
-    def calc_average(criteria, length):
+        # Dropdown for selecting the weighting method
+        self.method_label = tk.Label(self, text="Select Weighting Method:")
+        self.method_label.grid(row=0, column=0, padx=10, pady=5)
+
+        self.method_var = tk.StringVar(value="AHP")
+        self.method_dropdown = ttk.Combobox(self, textvariable=self.method_var)
+        self.method_dropdown['values'] = ("AHP", "Logarithmic Regression")
+        self.method_dropdown.grid(row=0, column=1, padx=10, pady=5)
+
+        # Number of criteria input
+        self.n = simpledialog.askinteger("Input", "Enter the number of criteria (3-8):", minvalue=3, maxvalue=8)
+
+        # Dynamic entry fields for criteria matrix
+        self.entries = []
+        for i in range(self.n ** 2):
+            entry = tk.Entry(self, width=10)
+            entry.grid(row=(i // self.n) + 1, column=i % self.n, padx=5, pady=5)
+            self.entries.append(entry)
+
+        # Calculate button
+        calculate_btn = tk.Button(self, text="Calculate", command=self.calculate)
+        calculate_btn.grid(row=self.n + 2, column=0, columnspan=self.n, pady=20)
+
+        # Plot buttons
+        bar_chart_btn = tk.Button(self, text="Show Bar Chart", command=self.show_bar_chart)
+        bar_chart_btn.grid(row=self.n + 3, column=0, pady=10)
+
+        pie_chart_btn = tk.Button(self, text="Show Pie Chart", command=self.show_pie_chart)
+        pie_chart_btn.grid(row=self.n + 3, column=1, pady=10)
+
+        # Scenario buttons
+        save_scenario_btn = tk.Button(self, text="Save Scenario", command=self.save_scenario)
+        save_scenario_btn.grid(row=self.n + 3, column=2, pady=10)
+
+        load_scenario_btn = tk.Button(self, text="Load Scenario", command=self.load_scenario)
+        load_scenario_btn.grid(row=self.n + 3, column=3, pady=10)
+
+        compare_scenarios_btn = tk.Button(self, text="Compare Scenarios", command=self.compare_scenarios)
+        compare_scenarios_btn.grid(row=self.n + 3, column=4, pady=10)
+
+        # Result label
+        self.result_label = tk.Label(self, text="")
+        self.result_label.grid(row=self.n + 4, column=0, columnspan=self.n, pady=10)
+
+        self.criteria_matrix = None
+        self.average_criteria = None
+        self.scenarios = {}
+
+    def calculate(self):
         """
-        Calculate the priority vector by normalizing the criteria matrix and averaging over columns.
-
-        Parameters:
-            criteria (np.ndarray): The criteria matrix for which the average is to be calculated.
-            length (int): The number of criteria, which should correspond to the dimension of the matrix.
-
-        Returns:
-            np.ndarray: The priority vector derived from the criteria matrix.
+        Gather input from the entries, process the AHP calculations, and display the results.
+        Handles errors by showing appropriate messages.
         """
-        Calculation.validate_matrix(criteria)
-        sum_c = np.sum(criteria, axis=0)
-        c_average = criteria / sum_c
-        average_criteria = np.mean(c_average, axis=1)
-        return average_criteria
+        try:
+            values = [float(entry.get()) for entry in self.entries]
+            self.criteria_matrix = np.array(values).reshape((self.n, self.n))
+            method = self.method_var.get()
 
-    @staticmethod
-    def mux_array(c1, c2, c3, c4, all_criteria):
+            if method == "AHP":
+                self.average_criteria = Calculation.calc_average(self.criteria_matrix, self.n)
+            elif method == "Logarithmic Regression":
+                self.average_criteria = Calculation.logarithmic_regression(self.criteria_matrix, self.n)
+
+            CR = Calculation.consistency_vector(self.criteria_matrix, self.average_criteria)
+            message = f"Consistency Ratio: {CR:.4f}\n"
+            if CR < 0.10:
+                message += "The matrix is consistent."
+            else:
+                message += "The matrix is not consistent, please revise it."
+            self.result_label.config(text=message)
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+
+    def show_bar_chart(self):
         """
-        Aggregate multiple criteria evaluations into a single priority vector using matrix multiplication.
-
-        Parameters:
-            c1, c2, c3, c4 (np.ndarray): Arrays of criteria evaluations.
-            all_criteria (np.ndarray): A matrix of weights or importance assigned to each criterion.
-
-        Returns:
-            np.ndarray: The resultant priority vector.
+        Display a bar chart of the priority vector.
         """
-        result = np.dot(np.array([c1, c2, c3, c4]).T, all_criteria)
-        return result
+        if self.average_criteria is not None:
+            plt.figure()
+            plt.bar(range(self.n), self.average_criteria, tick_label=[f'Criterion {i+1}' for i in range(self.n)])
+            plt.xlabel('Criteria')
+            plt.ylabel('Weight')
+            plt.title('Priority Vector')
+            plt.show()
+        else:
+            messagebox.showwarning("Warning", "Please calculate the priorities first.")
 
-    @staticmethod
-    def consistency_vector(all_criteria, average_criteria):
+    def show_pie_chart(self):
         """
-        Calculate the consistency ratio (CR) to evaluate the consistency of the pairwise comparison matrix.
-
-        Parameters:
-            all_criteria (np.ndarray): The pairwise comparison matrix.
-            average_criteria (np.ndarray): The priority vector derived from the pairwise comparison matrix.
-
-        Returns:
-            float: The consistency ratio, a measure of how consistent the comparisons were.
+                Display a pie chart of the priority vector.
         """
-        RI = [0, 0, 0.58, 0.90, 1.12, 1.24, 1.32, 1.41]  # Extended RI values for larger matrices
-        n = all_criteria.shape[0]
-        if n >= len(RI):
-            raise ValueError("RI value not defined for n = {}".format(n))
-        weighted_sum_vector = np.dot(all_criteria, average_criteria) / average_criteria
-        lambda_max = np.mean(weighted_sum_vector)
-        CI = (lambda_max - n) / (n - 1)
-        CR = CI / RI[n]
-        return CR
+        if self.average_criteria is not None:
+            plt.figure()
+            plt.pie(self.average_criteria, labels=[f"Criterion {i+1}" for i in range(self.n)], autopct='%1.1f%%')
+            plt.title('Priority Distribution')
+            plt.show()
+        else:
+            messagebox.showwarning("Warning", "Please calculate the priorities first.")
+
+    def save_scenario(self):
+        """
+        Save the current scenario with a unique name provided by the user.
+        """
+        if self.criteria_matrix is not None and self.average_criteria is not None:
+            scenario_name = simpledialog.askstring("Input", "Enter a name for the scenario: ")
+            if scenario_name:
+                self.screnarios[scenario_name] = {
+                    'criteria_matrix': self.criteria_matrix,
+                    'average_criteria': self.average_criteria
+                }
+                messagebox.showinfo("Success", f"Scenario '{scenario_name}' saved succesfully.")
+        else:
+            messagebox.showwarning("Warning", "Please calculate the priorities first.")
+
+
+    def load_scenario(self):
+        """
+        Load a saved scenario by selecting from the list of saved scenarios.
+        """
+        if self.scenarios:
+            scenario_name = simpledialog.askstring("Input", "Enter the name of the scenario to load:")
+            if scenario_name in self.scenarios:
+                scenario = self.scenarios[scenario_name]
+                self.criteria_matrix = scenario['criteria_matrix']
+                self.average_criteria = scenario['average_criteria']
+                messagebox.showinfo("Success", f"Scenario '{scenario_name}' loaded successfully.")
+                # Update the entry fields with the loaded scenario
+                for i in range(self.n ** 2):
+                    self.entries[i].delete(0, tk.END)
+                    self.entries[i].insert(0, str(self.criteria_matrix.flatten()[i]))
+            else:
+                messagebox.showerror("Error", f"Scenario '{scenario_name}' not found.")
+        else:
+            messagebox.showwarning("Warning", "No scenarios saved yet.")
+
+    def compare_scenarios(self):
+        """
+        Compare multiple scenarios and display the results.
+        """
+        if len(self.scenarios) > 1:
+            scenario_names = list(self.scenarios.keys())
+            comparison_data = {name: self.scenarios[name]['average_criteria'] for name in scenario_names}
+
+            plt.figure()
+            for name, data in comparison_data.items():
+                plt.plot(range(self.n), data, marker='o', label=name)
+
+            plt.xlabel('Criteria')
+            plt.ylabel('Weight')
+            plt.title('Scenario Comparison')
+            plt.legend()
+            plt.show()
+        else:
+            messagebox.showwarning("Warning", "Please save at least two scenarios to compare.")
+
+if __name__ == "__main__":
+    app = FormApp()
+    app.mainloop()
